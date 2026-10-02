@@ -1,0 +1,81 @@
+name: ci
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  sim:
+    name: 仿真 + 综合（iverilog / yosys）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 安装开源 EDA 工具链
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y iverilog yosys
+          iverilog -V | head -1
+          yosys -V
+
+      - name: 参考模型自检（RTL 与 Python 定点模型对的是同一份数据）
+        run: python tools/golden.py
+
+      - name: 全部 RTL 测试台 + yosys 综合
+        run: python tools/run_tests.py --synth
+
+      - name: 上传综合报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: synth-report
+          path: |
+            synth/synth_report.txt
+            build/*.vvp
+          if-no-files-found: warn
+
+  lint:
+    name: 源文件规范检查
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: RTL 里不许有 $display / 不可综合结构
+        run: |
+          python - <<'PY'
+          import pathlib, re, sys
+          bad = []
+          for p in sorted(pathlib.Path("rtl").glob("*.v")):
+              text = p.read_text(encoding="utf-8")
+              for pat, why in ((r"\$display", "$display 只能出现在 testbench 里"),
+                               (r"#\s*\d+", "延时语句不可综合"),
+                               (r"\binitial\b.*begin\s*$", "initial 块需确认只用于 ROM 初始化")):
+                  for m in re.finditer(pat, text, re.M):
+                      line = text[:m.start()].count("\n") + 1
+                      # 正弦查找表是唯一允许的 initial（ROM 初始化）
+                      if "SIN_LUT" in text[text.rfind("\n", 0, m.start()):m.start() + 80]:
+                          continue
+                      bad.append(f"{p}:{line}: {why}")
+          if bad:
+              print("\n".join(bad))
+              sys.exit("RTL 规范检查未通过")
+          print("RTL 规范检查通过：无可综合性问题")
+          PY
+
+      - name: 生成的查找表与向量必须是最新的
+        run: |
+          cp rtl/sincos_rom.vh /tmp/sincos_rom.vh.bak
+          cp tb/vectors.vh /tmp/vectors.vh.bak
+          python tools/golden.py
+          diff -q /tmp/sincos_rom.vh.bak rtl/sincos_rom.vh
+          diff -q /tmp/vectors.vh.bak tb/vectors.vh
+          echo "生成物与提交版本一致"

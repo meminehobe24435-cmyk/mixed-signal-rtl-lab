@@ -1,0 +1,24 @@
+# yosys 综合脚本：把整个数字子系统综合成通用门级网表并给出资源占用
+# 目标选 generic（不绑定具体工艺库），用于核对"设计能不能综合、面积量级如何"。
+# 真实 ASIC 项目这里会换成工艺库 + 时序约束，本项目没有商业 EDA，故只做通用综合。
+
+read_verilog -I rtl \
+    rtl/sar_adc_ctrl.v \
+    rtl/pwm_deadtime.v \
+    rtl/spi_regfile.v \
+    rtl/rdc_tracking.v \
+    rtl/ms_top.v
+
+hierarchy -check -top ms_top
+proc
+opt
+fsm
+opt
+memory
+opt
+techmap
+opt
+abc
+opt
+clean
+stat

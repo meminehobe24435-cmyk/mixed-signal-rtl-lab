@@ -1,0 +1,18 @@
+# 仿真与综合产物
+build/
+*.vvp
+*.vcd
+*.out
+*.fst
+
+# 报告与临时产物
+artifacts/
+synth/synth_report.txt
+synth/*.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
